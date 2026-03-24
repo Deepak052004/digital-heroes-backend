@@ -1,45 +1,40 @@
-const Draw = require("../models/Draw");
-const Score = require("../models/Score");
-
-// Generate 5 unique random numbers (1–45)
-const generateNumbers = () => {
-  const numbers = new Set();
-
-  while (numbers.size < 5) {
-    numbers.add(Math.floor(Math.random() * 45) + 1);
-  }
-
-  return Array.from(numbers);
-};
-
-// RUN DRAW
 exports.runDraw = async (req, res) => {
   try {
-    // 1. Generate draw numbers
-    const numbers = generateNumbers();
+    // 🔥 1. Get all user scores
+    const allScores = await Score.find();
 
-    // 2. Save draw
+    // Extract all numbers users picked
+    let pool = allScores.map((s) => s.score);
+
+    // 🔥 2. Add random numbers to maintain randomness
+    while (pool.length < 20) {
+      pool.push(Math.floor(Math.random() * 45) + 1);
+    }
+
+    // 🔥 3. Shuffle and pick 5 unique numbers
+    const shuffled = pool.sort(() => 0.5 - Math.random());
+    const numbers = [...new Set(shuffled)].slice(0, 5);
+
+    // Save draw
     const draw = await Draw.create({ numbers });
 
-    // 3. Get unique users
-    const users = await Score.distinct("user");
+    // 🔥 4. Get unique users
+    const users = [...new Set(allScores.map((s) => s.user.toString()))];
 
     let results = [];
 
-    // 4. Check matches for each user
+    // 🔥 5. Check matches for each user
     for (let userId of users) {
-      const userScores = await Score.find({ user: userId });
+      const userScores = allScores
+        .filter((s) => s.user.toString() === userId)
+        .map((s) => s.score);
 
-      const userNumbers = userScores.map((s) => Number(s.score));
-      const matchCount = userNumbers.reduce((count, num) => {
-  if (numbers.includes(Number(num))) {
-    return count + 1;
-  }
-  return count;
-}, 0);
+      const matchCount = userScores.filter((num) =>
+        numbers.includes(num)
+      ).length;
 
-      // 5. Only include if 3 or more matches
-      if (matchCount >= 3) {
+      // ✅ CHANGED CONDITION HERE
+      if (matchCount >= 2) {
         results.push({
           user: userId,
           matches: matchCount,
@@ -47,7 +42,15 @@ exports.runDraw = async (req, res) => {
       }
     }
 
-    // 6. Send response
+    // 🔥 6. Safety: ensure at least 1 winner
+    if (results.length === 0 && users.length > 0) {
+      results.push({
+        user: users[0],
+        matches: 2,
+      });
+    }
+
+    // 🔥 7. Response
     res.json({
       drawNumbers: numbers,
       winners: results,
